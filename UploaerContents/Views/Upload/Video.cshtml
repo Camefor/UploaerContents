@@ -1,0 +1,303 @@
+﻿
+@{
+    ViewData["Title"] = "Video";
+}
+<link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+<script src="~/lib/jquery/dist/jquery.min.js"></script>
+<script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+
+
+
+
+<div class="container">
+
+    <div class="jumbotron">
+        <h1>上传视频</h1>
+        <div id="uploader" class="wu-example">
+            <span id="support" style="color:red">只能上传: </span>
+            <div id="thelist" class="uploader-list"></div>
+
+            <div>
+                <div id="picker" class="webuploader-container">
+                    <div class="webuploader-pick webuploader-pick-hover">选择文件</div>
+                    <div>
+                        <input type="file" name="file" class="webuploader-element-invisible" multiple="multiple" />
+                        <label style="opacity: 0; width: 100%; height: 100%; display: block; cursor: pointer; background: rgb(255, 255, 255);">   </label>
+
+
+
+                    </div>
+                </div>
+
+                <div>
+                    <span style="color:blue;font-size:20px;font-weight:bold" id="result">
+                        URL:
+                    </span>
+                    <br />
+                </div>
+                <button id="ctlBtn" class="btn btn-info">开始上传</button>
+            </div>
+
+            <br />
+
+        </div>
+    </div>
+</div>
+
+<script>
+    jQuery(function () {
+
+        var $ = jQuery,
+            $list = $('#thelist'),
+            $btn = $('#ctlBtn'),
+            state = 'pending',
+            fileMd5,
+            flag = true,
+            dataState,
+            fm = [],
+            fnum,
+            Token,
+            resultUrl,
+            fileGuid,
+            uploader;
+        var FileExt = [
+            "MPG", "MPEG", "MP4", "AVI",
+            "WEBM", "3gp", "3GP", "ASF", "AVI",
+            "FLV", "MKV", "MOV", "RMVB", "WEBM", "mpg"
+        ];
+        for (ext of FileExt) {
+              $('#support').append(" "+ext);
+        }
+         $('#support').append(" "+"格式");
+            @*Token = '@ViewBag.Token';
+            if (Token == '' || Token== 'undefined')
+            {
+                $("#uploader").hide();
+                alert("登录超时，请重新登录。");
+            }*@
+        //监听分块上传过程中的三个时间点
+        WebUploader.Uploader.register({
+            "before-send-file": "beforeSendFile",
+            "before-send": "beforeSend",
+            "after-send-file": "afterSendFile",
+        }, {
+                beforeSendFile: function (file) {
+                var startTime = new Date(file.lastModifiedDate);
+                fileName = file.name;
+                fileGuid = file.guid;
+                var deferred = WebUploader.Deferred();
+                (new WebUploader.Uploader()).md5File(file, 0, 5 * 1024 * 1024)
+                    .progress(function (percentage) {
+                        console.log("正在读取文件");
+                    })
+                    .then(function (val) {
+                        fileMd5 = val;
+                        fm.push(fileMd5);
+                        deferred.resolve();
+                    });
+                return deferred.promise();
+            },
+            //时间点2：如果有分块上传，则每个分块上传之前调用此函数
+                beforeSend: function (block) {
+                var deferred = WebUploader.Deferred();
+                //上传前ajax检测一下此文件块是否已经上传
+                this.owner.options.formData.fileMd5 = fileMd5;
+                this.owner.options.formData.chunk = block.chunk;
+                deferred.resolve();
+                return deferred.promise();
+            },
+            //时间点3：所有分块上传成功后调用此函数
+                afterSendFile: function (file) {
+                var deferred = $.Deferred();
+                    $('#' + file.id).find('p.state').text('执行最后一步');
+                    console.log(file);
+                $.ajax({
+                    type: "POST",
+                    url: "/Upload/FileMerge" ,
+                    data: {
+                        guid: fileGuid,
+                        fileMd5: fm[fnum],
+                        fileName: file.name
+                    },
+                    cache: false,
+                    async: false,
+                    success: function (response) {
+                        fnum++;
+                        console.log(response);
+                        if (response.success == true) {
+                            dataState = response;
+                            flag = true;
+
+                            resultUrl = response.url;
+                        } else {
+                            flag = false;
+                        }
+                        deferred.resolve();
+                    },
+                    error: function () {
+                        fnum++;
+                        dataState = undefined;
+                        flag = false;
+                        deferred.reject();
+                    }
+                });
+
+                return deferred.promise();
+            }
+        });
+        uploader = WebUploader.create({
+            auto:true,// 选完文件后，是否自动上传。
+            resize: false,
+            fileNumLimit: 10,
+              // swf文件路径
+            swf: '/js/Uploader.swf',
+               // 文件接收服务端。
+            server: '/Upload/FileSave',
+            pick: '#picker',
+            chunked: true,
+            chunkSize: 10 * 1024 * 1024,
+            chunkRetry: 5,
+            formData: {
+                guid: fileGuid
+            }
+        });
+        uploader.on('beforeFileQueued', function (file) {
+            var isAdd = false;
+            file.ext = file.ext.toUpperCase();
+            for (var i = 0; i < FileExt.length; i++) {
+                if (file.ext == FileExt[i]) {
+                    file.guid = WebUploader.Base.guid();
+                    isAdd = true;
+                    break;
+                }
+            }
+            return isAdd;
+        });
+        uploader.on('uploadBeforeSend', function (object, data, headers) {
+            data.guid = object.file.guid;
+            fileGuid = object.file.guid;
+        });
+        // 当有文件添加进来的时候
+        uploader.on('fileQueued', function (file) {
+            $list.append('<div id="' + file.id + '" class="item">' +
+                '<h4 class="info">' + file.name + '</h4>' +
+                '<input type="hidden" id="h_' + file.id + '" value="' + file.guid + '" />' +
+                '<p class="state">等待上传...</p>' +
+                '</div>');
+        });
+
+        // 文件上传过程中创建进度条实时显示。
+        uploader.on('uploadProgress', function (file, percentage) {
+            var $li = $('#' + file.id),
+                $percent = $li.find('.progress .progress-bar');
+            // 避免重复创建
+            if (!$percent.length) {
+                $percent = $('<div class="progress progress-striped active">' +
+                    '<div class="progress-bar" role="progressbar" style="width: 0%">' +
+                    '</div>' +
+                    '</div>').appendTo($li).find('.progress-bar');
+            }
+            $li.find('p.state').text('上传中');
+
+            $percent.css('width', percentage * 100 + '%');
+        });
+
+        uploader.on('uploadSuccess', function (file) {
+            if (dataState == undefined) {
+                $('#' + file.id).find('p.state').text('上传失败');
+                $('#' + file.id).find('button').remove();
+                $('#' + file.id).find('p.state').before('<button id="retry" type="button" class="btn btn-primary fright retry pbtn">重新上传</button>');
+                flag = false;
+                file.setStatus('error');
+            }
+            if (dataState.success == true) {
+                $('#' + file.id).find('p.state').text('已上传');
+                $('#' + file.id).find('button').remove();
+
+                let hostname = location.hostname;
+                let port = location.port;
+                let _url = hostname + ":" + port + "/Upload/"+resultUrl
+                 let _Str = `
+           <div>
+             <a target="_blank" href="${_url}">${_url}</a>
+           </div>
+             `;
+             $('#result').append(_Str);
+
+            } else {
+                $('#' + file.id).find('p.state').text('上传失败');
+                flag = false;
+            }
+        });
+
+        uploader.on('uploadError', function (file) {
+            $('#' + file.id).find('p.state').text('上传出错');
+        });
+
+        uploader.on('uploadComplete', function (file) {
+            $('#' + file.id).find('.progress').fadeOut();
+        });
+
+        uploader.on('all', function (type) {
+            if (type === 'startUpload') {
+                state = 'uploading';
+            } else if (type === 'stopUpload') {
+                state = 'paused';
+            } else if (type === 'uploadFinished') {
+                state = 'done';
+            }
+            if (state === 'done') {
+                $btn.text('继续上传');
+            } else if (state === 'uploading') {
+                $btn.text('暂停上传');
+            } else {
+                $btn.text('开始上传');
+            }
+        });
+        $btn.on('click', function () {
+            if (state === 'uploading') {
+                uploader.stop();
+            } else if (state == 'done') {
+                window.location.reload();
+            }
+            else {
+                uploader.upload();
+            }
+        });
+        $('#btnSupport').click(function () {
+            console.log(FileExt)
+
+        })
+
+         $(".dragFile").on("dragenter", function(e){
+         e.preventDefault();
+         });
+
+
+        $('.dragFile').on('dragover', (e) => {
+            e.preventDefault();
+        });
+
+        $('.dragFile').on('drop', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            var files = e.dataTransfer.files; //获取文件
+            appendFile(files, '.list-drag')
+        });
+        function appendFile(files, listName) {
+
+            for (file of files) {
+                 let url = window.URL.createObjectURL(file);
+                 let liStr = `
+         <li class="list-group-item">
+           <div>
+             <img src="${url}" alt="文件" />
+           </div>
+         </li>
+             `;
+             $(listName).append(liStr);
+            }
+        };
+
+  });
+</script>

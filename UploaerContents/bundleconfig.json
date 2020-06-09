@@ -1,0 +1,8 @@
+[
+  {
+    "outputFileName": "wwwroot/node_modules/at-ui-style/css/at.min.css",
+    "inputFiles": [
+      "wwwroot/node_modules/at-ui-style/css/at.css"
+    ]
+  }
+]
